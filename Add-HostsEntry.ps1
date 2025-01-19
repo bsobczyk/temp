@@ -31,10 +31,11 @@ try {
     }
 
     # Read current content
-    $hostsContent = Get-Content $HostsFilePath
+    $hostsContent = @(Get-Content $HostsFilePath -Raw)
 
     # Check if entry already exists
-    $entryExists = $hostsContent | Where-Object { 
+    $existingLines = $hostsContent -split "`r`n"
+    $entryExists = $existingLines | Where-Object { 
         $_ -match "^\s*$IPAddress\s+$Hostname\s*$" -or 
         $_ -match "^\s*[0-9.]+\s+$Hostname\s*$"
     }
@@ -48,22 +49,25 @@ try {
             exit 0
         }
         # Remove existing entry
-        $hostsContent = $hostsContent | Where-Object { 
+        $existingLines = $existingLines | Where-Object { 
             $_ -notmatch "^\s*[0-9.]+\s+$Hostname\s*$"
         }
     }
-
-    # Add new entry
-    $newEntry = "`n$IPAddress`t$Hostname"
-    $hostsContent += $newEntry
 
     # Backup original file
     $backupPath = "$HostsFilePath.bak"
     Copy-Item $HostsFilePath $backupPath -Force
     Write-Output "Backup created at: $backupPath"
 
-    # Write updated content
-    $hostsContent | Set-Content $HostsFilePath -Force
+    # Add new entry and prepare content
+    $newEntry = "$IPAddress`t$Hostname"
+    if ($existingLines[-1] -ne "") {
+        $newEntry = "`r`n$newEntry"
+    }
+    $existingLines += $newEntry
+
+    # Write updated content using Out-File
+    $existingLines | Out-File -FilePath $HostsFilePath -Encoding ASCII -Force
     Write-Output "Successfully added entry: $IPAddress -> $Hostname"
     Write-Output "Hosts file updated at: $HostsFilePath"
 
