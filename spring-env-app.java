@@ -115,3 +115,35 @@ server:
 spring:
   application:
     name: env-variables-demo
+
+
+package com.example.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/env")
+@Tag(name = "Environment Variables")
+public class EnvController {
+
+    @Value("${server.port:8080}")
+    private String serverPort;
+
+    @GetMapping("/all")
+    public Map<String, String> getAllEnvVariables() {
+        Map<String, String> envVariables = new HashMap<>();
+        envVariables.put("SERVER_PORT", serverPort);
+        envVariables.put("JAVA_VERSION", System.getProperty("java.version"));
+        envVariables.put("OS_NAME", System.getProperty("os.name"));
+        return envVariables;
+    }
+}
+             
