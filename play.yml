@@ -1,0 +1,230 @@
+---
+- name: Aktualizacja indywidualnych certyfikatów na serwerach Fujitsu Primergy
+  hosts: primergy_servers
+  gather_facts: no
+  collections:
+    - fujitsu.primergy
+  vars:
+    # Główny katalog z certyfikatami
+    certs_base_dir: "/path/to/certificates"
+    # Katalog kopii zapasowych
+    backup_dir: "./backups"
+    # Domyślne dane logowania (można nadpisać w inventory)
+    irmc_username: "admin"
+    irmc_password: "{{ vault_irmc_password }}"
+    # Format nazw plików certyfikatów (możesz dostosować)
+    cert_filename_pattern: "{{ inventory_hostname }}.pem"
+    key_filename_pattern: "{{ inventory_hostname }}.key"
+    
+  pre_tasks:
+    - name: Upewnij się, że katalog na kopie zapasowe istnieje
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0750'
+      delegate_to: localhost
+      run_once: true
+      
+    - name: Sprawdź istnienie certyfikatów dla wszystkich serwerów
+      stat:
+        path: "{{ certs_base_dir }}/{{ item }}"
+      loop:
+        - "{{ cert_filename_pattern }}"
+        - "{{ key_filename_pattern }}"
+      register: cert_files_check
+      delegate_to: localhost
+      
+    - name: Wyświetl ostrzeżenie dla brakujących certyfikatów
+      debug:
+        msg: "UWAGA: Brak certyfikatu lub klucza dla serwera {{ inventory_hostname }}"
+      when: not (cert_files_check.results[0].stat.exists and cert_files_check.results[1].stat.exists)
+      
+    - name: Ustaw zmienną kontrolującą, czy serwer ma wszystkie pliki
+      set_fact:
+        has_all_cert_files: "{{ cert_files_check.results[0].stat.exists and cert_files_check.results[1].stat.exists }}"
+
+  tasks:
+    - name: Pobierz informacje o serwerze Primergy
+      fujitsu.primergy.irmc_facts:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+      register: server_info
+      ignore_errors: yes
+      when: has_all_cert_files | bool
+      
+    - name: Pobierz aktualne informacje o certyfikacie przed aktualizacją
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: get
+        certificate_type: "SSLCertificate"
+      register: current_cert_info
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+      
+    - name: Utwórz dedykowany katalog na kopie zapasowe dla tego serwera
+      file:
+        path: "{{ backup_dir }}/{{ inventory_hostname }}"
+        state: directory
+        mode: '0750'
+      delegate_to: localhost
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+      
+    - name: Utwórz kopię zapasową istniejącego certyfikatu
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: export
+        certificate_type: "SSLCertificate"
+        export_format: "PEM"
+        export_path: "{{ backup_dir }}/{{ inventory_hostname }}/cert_{{ ansible_date_time.date }}.pem"
+      register: backup_result
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+      delegate_to: localhost
+      
+    - name: Utwórz kopię zapasową istniejącego klucza (jeśli dostępne)
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: export
+        certificate_type: "SSLCertificateKey"
+        export_format: "PEM"
+        export_path: "{{ backup_dir }}/{{ inventory_hostname }}/key_{{ ansible_date_time.date }}.pem"
+      register: backup_key_result
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+      ignore_errors: yes  # Może być niedostępne w zależności od konfiguracji
+      delegate_to: localhost
+      
+    - name: Załaduj nowy certyfikat SSL specyficzny dla serwera
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: import
+        certificate_type: "SSLCertificate"
+        import_format: "PEM"
+        import_path: "{{ certs_base_dir }}/{{ cert_filename_pattern }}"
+      register: cert_import_result
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+      
+    - name: Załaduj nowy klucz SSL specyficzny dla serwera
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: import
+        certificate_type: "SSLCertificateKey"
+        import_format: "PEM"
+        import_path: "{{ certs_base_dir }}/{{ key_filename_pattern }}"
+      register: key_import_result
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+      
+    - name: Pobierz informacje o nowym certyfikacie
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: get
+        certificate_type: "SSLCertificate"
+      register: new_cert_info
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+        - cert_import_result is success
+        - key_import_result is success
+      
+    - name: Określ, czy restart jest konieczny
+      set_fact:
+        restart_required: true
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+        - cert_import_result is success
+        - key_import_result is success
+        - current_cert_info.certificate.fingerprint != new_cert_info.certificate.fingerprint
+      
+    - name: Restart usługi iRMC (jeśli wymagany)
+      fujitsu.primergy.irmc_reset:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: "reset"
+        reset_type: "graceful"
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+        - cert_import_result is success
+        - key_import_result is success
+        - restart_required | default(false) | bool
+      
+    - name: Poczekaj na ponowne uruchomienie usługi iRMC
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 443
+        delay: 30
+        timeout: 300
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+        - cert_import_result is success
+        - key_import_result is success
+        - restart_required | default(false) | bool
+      
+    - name: Zweryfikuj nowy certyfikat
+      fujitsu.primergy.irmc_certificate:
+        irmc_url: "https://{{ inventory_hostname }}"
+        irmc_username: "{{ irmc_username }}"
+        irmc_password: "{{ irmc_password }}"
+        validate_certs: no
+        command: get
+        certificate_type: "SSLCertificate"
+      register: verification_result
+      when: 
+        - has_all_cert_files | bool
+        - server_info is success
+        - cert_import_result is success
+        - key_import_result is success
+
+  post_tasks:
+    - name: Raportuj wyniki aktualizacji
+      debug:
+        msg: 
+          - "Status aktualizacji dla {{ inventory_hostname }}:"
+          - "Pliki certyfikatów dostępne: {{ 'OK' if has_all_cert_files | bool else 'BRAK PLIKÓW' }}"
+          - "Dostępność serwera: {{ 'OK' if server_info is success else 'FAILED' }}"
+          - "Kopia zapasowa certyfikatu: {{ 'OK' if backup_result is defined and backup_result is success else 'N/A' }}"
+          - "Kopia zapasowa klucza: {{ 'OK' if backup_key_result is defined and backup_key_result is success else 'N/A' }}"
+          - "Import certyfikatu: {{ 'OK' if cert_import_result is defined and cert_import_result is success else 'N/A' }}"
+          - "Import klucza: {{ 'OK' if key_import_result is defined and key_import_result is success else 'N/A' }}"
+          - "Restart wymagany: {{ 'TAK' if restart_required | default(false) | bool else 'NIE' }}"
+          - "Weryfikacja: {{ 'OK' if verification_result is defined and verification_result is success else 'N/A' }}"
+      
+    - name: Generuj raport zbiorczy
+      template:
+        src: templates/cert_update_report.j2
+        dest: "{{ backup_dir }}/raport_aktualizacji_{{ ansible_date_time.date }}.txt"
+      delegate_to: localhost
+      run_once: true
