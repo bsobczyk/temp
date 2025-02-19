@@ -1,0 +1,47 @@
+steps:
+- task: Bash@3
+  displayName: 'Diagnoza problemu z Base64'
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Ustaw nazwę serwera
+      server_name=server01
+      
+      # 1. Sprawdź czy zmienna istnieje i jaki ma format
+      cert_var_name="${server_name}-certificate"
+      cert_env_var=$(echo $cert_var_name | tr '-' '_')
+      
+      echo "Szukam zmiennej środowiskowej: $cert_env_var"
+      
+      # 2. Sprawdź wszystkie zmienne związane z certyfikatami
+      echo "Dostępne zmienne z certyfikatami:"
+      printenv | grep -i certificate | sort
+      
+      # 3. Sprawdź wartość certyfikatu (wyświetl tylko pierwsze 10 znaków dla bezpieczeństwa)
+      cert_value=$(eval echo \$${cert_env_var})
+      echo "Pierwsze 10 znaków certyfikatu: ${cert_value:0:10}..."
+      
+      # 4. Sprawdź, czy wartość wygląda jak Base64 (powinna zawierać tylko znaki A-Z, a-z, 0-9, +, /, =)
+      if [[ $cert_value =~ ^[A-Za-z0-9+/=]+$ ]]; then
+        echo "Format wygląda na poprawny Base64"
+      else
+        echo "UWAGA: Format NIE wygląda na poprawny Base64"
+      fi
+      
+      # 5. Sprawdź, czy nie ma znaków nowej linii lub białych znaków
+      if [[ $cert_value == *$'\n'* ]] || [[ $cert_value == *$'\r'* ]]; then
+        echo "UWAGA: Znaleziono znaki nowej linii. Spróbujmy je usunąć."
+        cert_value=$(echo "$cert_value" | tr -d '\n\r')
+      fi
+      
+      # 6. Próba zapisania z opcją -i (ignoruj nieprawidłowe znaki)
+      echo "Próba zapisu z opcją -i:"
+      echo "$cert_value" | base64 -d -i > cert_safe.pfx 2>base64_error.log
+      
+      # 7. Sprawdź, czy plik został utworzony
+      if [ -s cert_safe.pfx ]; then
+        echo "Plik cert_safe.pfx został utworzony z rozmiarem: $(stat -c%s cert_safe.pfx) bajtów"
+      else
+        echo "Nie udało się utworzyć pliku cert_safe.pfx"
+        cat base64_error.log
+      fi
