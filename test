@@ -1,71 +1,13 @@
-# azure-pipeline.yml
-trigger:
-- main
+# Lista serwerów
+servers=("server01" "server02" "server03")
 
-pool:
-  vmImage: 'ubuntu-latest'
+# Wygeneruj skrypt pomocniczy dla każdego serwera
+cat > get_certs.sh << EOF
+#!/bin/bash
+EOF
 
-variables:
-  keyVaultName: 'test-keyvault'  # Nazwa Twojego Key Vault
-  server_name: 'server01'        # Nazwa testowanego serwera
+for server in "${servers[@]}"; do
+  echo "echo \"\$(${server})\" | base64 --decode > \"$(Build.ArtifactStagingDirectory)/certificates/${server}.pfx\"" >> get_certs.sh
+done
 
-steps:
-- task: AzureKeyVault@2
-  displayName: 'Pobierz sekrety z Azure Key Vault'
-  inputs:
-    azureSubscription: 'YourAzureServiceConnection'
-    KeyVaultName: '$(keyVaultName)'
-    SecretsFilter: '*'
-    RunAsPreJob: false
-
-- task: Bash@3
-  displayName: 'Zapisz certyfikat do pliku PFX'
-  inputs:
-    targetType: 'inline'
-    script: |
-      # Utwórz folder na certyfikat
-      mkdir -p "$(Build.ArtifactStagingDirectory)/certificates"
-      
-      # Nazwa sekretu w KeyVault (zakładając format "server01")
-      secret_name="$(server_name)"
-      
-      # Pobierz wartość certyfikatu używając składni zmiennych pipeline
-      cert_value="$(${secret_name})"
-      
-      # Wyświetl pierwsze znaki dla weryfikacji (nie wyświetlaj całej zawartości)
-      echo "Pierwsze 10 znaków certyfikatu: ${cert_value:0:10}..."
-      
-      # Zapisz do pliku (spróbuj bez dekodowania base64 najpierw)
-      cert_path="$(Build.ArtifactStagingDirectory)/certificates/${server_name}.pfx"
-      echo "$cert_value" > "${cert_path}.b64"
-      
-      # Spróbuj dekodować Base64
-      cat "${cert_path}.b64" | base64 -d > "${cert_path}" 2>base64_error.log
-      
-      if [ -s "${cert_path}" ]; then
-        echo "Pomyślnie zapisano certyfikat do ${cert_path}"
-        ls -la "${cert_path}"
-      else
-        echo "Wystąpił błąd podczas dekodowania Base64:"
-        cat base64_error.log
-        
-        echo "Próba alternatywnej metody dekodowania..."
-        # Spróbuj wyczyścić dane przed dekodowaniem
-        cat "${cert_path}.b64" | tr -d '\n\r' | base64 -d -i > "${cert_path}.clean" 2>/dev/null
-        
-        if [ -s "${cert_path}.clean" ]; then
-          mv "${cert_path}.clean" "${cert_path}"
-          echo "Udało się zdekodować po wyczyszczeniu danych!"
-        else
-          echo "UWAGA: Być może certyfikat nie jest zakodowany w Base64 lub ma niestandardowy format."
-          echo "Zachowuję oryginalną zawartość jako ${cert_path}"
-          mv "${cert_path}.b64" "${cert_path}"
-        fi
-      fi
-
-- task: PublishBuildArtifacts@1
-  displayName: 'Publikuj certyfikat jako artefakt'
-  inputs:
-    PathtoPublish: '$(Build.ArtifactStagingDirectory)/certificates'
-    ArtifactName: 'certificate'
-    publishLocation: 'Container'
+chmod +x get_certs.sh
