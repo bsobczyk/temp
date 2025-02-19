@@ -1,13 +1,36 @@
-# Lista serwerów
-servers=("server01" "server02" "server03")
-
-# Wygeneruj skrypt pomocniczy dla każdego serwera
-cat > get_certs.sh << EOF
 #!/bin/bash
-EOF
+# Skrypt do pobierania certyfikatów z Azure KeyVault
+# Zapisz ten plik w repozytorium jako get_certs.sh
 
-for server in "${servers[@]}"; do
-  echo "echo \"\$(${server})\" | base64 --decode > \"$(Build.ArtifactStagingDirectory)/certificates/${server}.pfx\"" >> get_certs.sh
-done
+# Utwórz folder na certyfikaty
+mkdir -p "${BUILD_ARTIFACTSTAGINGDIRECTORY}/certificates"
 
-chmod +x get_certs.sh
+# Pobierz certyfikat dla określonego serwera
+function get_certificate() {
+  local server=$1
+  local output_dir=$2
+  
+  echo "Pobieram certyfikat dla: $server"
+  
+  # Odwołanie do zmiennej pipeline w składni heredoc
+  # To pozwala na poprawne podstawienie zmiennej w czasie wykonania
+  eval "cat << EOF
+\$(${server})
+EOF" | base64 --decode > "${output_dir}/${server}.pfx"
+  
+  # Sprawdź czy operacja się powiodła
+  if [ $? -eq 0 ] && [ -s "${output_dir}/${server}.pfx" ]; then
+    echo "✅ Certyfikat dla ${server} zapisany pomyślnie"
+  else
+    echo "❌ Błąd pobierania certyfikatu dla ${server}"
+    return 1
+  fi
+}
+
+# Przykład użycia dla jednego serwera
+get_certificate "server01" "${BUILD_ARTIFACTSTAGINGDIRECTORY}/certificates"
+
+# Odkomentuj poniższe aby obsłużyć wiele serwerów
+# for i in $(seq -f "%02g" 1 10); do
+#   get_certificate "server${i}" "${BUILD_ARTIFACTSTAGINGDIRECTORY}/certificates"
+# done
