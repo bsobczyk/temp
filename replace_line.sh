@@ -1,25 +1,26 @@
 #!/bin/bash
 
-# Generowanie wpisów do pliku ini
-ini_entries=""
-while IFS= read -r server; do
-    # Pomijaj puste linie
-    if [ -n "$server" ]; then
-        # Usuwamy wszystkie znaki nowej linii i dodajemy tylko jeden na końcu
-        ini_entries+="${server} ansible_host=${server} ansible_connection=local\n"
-    fi
-done < servers.txt
-
-# Sprawdzamy czy plik servers.ini istnieje
+# Sprawdźmy, czy plik servers.ini istnieje, jeśli nie - tworzymy go z nagłówkiem
 if [ ! -f servers.ini ]; then
     echo "[servers]" > servers.ini
 fi
 
-# Odczytanie istniejącej zawartości pliku ini
+# Zachowaj pierwszą linię (nagłówek) z istniejącego pliku
 header=$(head -n 1 servers.ini)
-rest=$(tail -n +2 servers.ini 2>/dev/null || echo "")
 
-# Zapisanie zawartości do pliku
-echo -e "${header}\n${ini_entries}${rest}" > servers.ini
+# Tworzymy tymczasowy plik z nagłówkiem
+echo "$header" > servers.ini.tmp
 
-echo "Nowe wpisy zostały dodane od drugiej linii pliku servers.ini."
+# Dodajemy odpowiednio sformatowane wpisy serwerów bezpośrednio z pliku
+while IFS= read -r server; do
+    # Pomijamy puste linie
+    if [ -n "$server" ]; then
+        # Dokładnie formatujemy linię bez dodatkowych znaków nowej linii
+        echo "${server} ansible_host=${server} ansible_connection=local" >> servers.ini.tmp
+    fi
+done < servers.txt
+
+# Kopiujemy zawartość pliku tymczasowego do docelowego
+mv servers.ini.tmp servers.ini
+
+echo "Plik servers.ini został zaktualizowany. Każdy serwer jest teraz w osobnej linii."
