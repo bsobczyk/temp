@@ -1,0 +1,19 @@
+$(System.DefaultWorkingDirectory)  -> /home/vsts/work/1/s
+$(Build.SourcesDirectory)          -> /home/vsts/work/1/s
+$(Build.ArtifactStagingDirectory)  -> /home/vsts/work/1/a
+$(Build.BuildId)                   -> 123456 (unikalny numeryczny ID buildu)
+$(Build.BuildNumber)               -> 20240221.1 (domyślnie YYYYMMDD.liczba_porządkowa)
+$(Build.DefinitionName)            -> Nazwa twojego pipeline'u zdefiniowana w Azure DevOps
+
+$(Agent.Name)                      -> Nazwa agenta, np. "Azure Pipelines 1"
+$(Agent.OS)                        -> Windows_NT, Darwin lub Linux
+$(Agent.HomeDirectory)             -> /home/vsts (Linux) lub C:\agent (Windows)
+
+$(Build.Repository.Name)           -> twoja_organizacja/twoje_repozytorium
+$(Build.Repository.Uri)            -> https://dev.azure.com/twoja_organizacja/projekt/_git/repozytorium
+$(Build.SourceBranch)              -> refs/heads/main
+$(Build.SourceBranchName)          -> main
+$(Build.SourceVersion)             -> 1a2b3c4d... (hash commita)
+
+$(Pipeline.Workspace)              -> /home/vsts/work/1
+$(Environment.Name)                -> nazwa_środowiska_z_definicji
